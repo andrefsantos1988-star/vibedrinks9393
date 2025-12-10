@@ -8,12 +8,14 @@ import { seedDatabase } from "./storage";
 const app = express();
 const httpServer = createServer(app);
 
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Id'],
-}));
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-User-Id"],
+  })
+);
 
 declare module "http" {
   interface IncomingMessage {
@@ -26,7 +28,7 @@ app.use(
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
-  }),
+  })
 );
 
 app.use(express.urlencoded({ extended: false }));
@@ -69,9 +71,23 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  await seedDatabase();
+  // ---------------------------
+  //  FIX: SeedDatabase seguro
+  // ---------------------------
+  if (process.env.NODE_ENV !== "production") {
+    // Em dev → seed normal
+    await seedDatabase();
+  } else {
+    // Em produção → não derrubar servidor
+    seedDatabase().catch((err) => {
+      console.error("SeedDatabase falhou em produção (IGNORADO):", err);
+    });
+  }
+
+  // Registrar rotas normalmente
   await registerRoutes(httpServer, app);
 
+  // Middleware de erros
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -80,21 +96,19 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // In production, serve static files (unified deployment)
-  // In development, use Vite dev server
+  // Ambiente de produção → servir arquivos estáticos
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
     log("Serving static files from dist/public");
   } else {
+    // Ambiente de desenvolvimento → Vite Dev Server
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
+  // Porta obrigatória do Render / Replit
   const port = parseInt(process.env.PORT || "5000", 10);
+
   httpServer.listen(
     {
       port,
@@ -103,6 +117,6 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
-    },
+    }
   );
 })();
