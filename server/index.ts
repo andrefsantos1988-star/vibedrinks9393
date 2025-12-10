@@ -14,7 +14,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-User-Id"],
-  })
+  }),
 );
 
 declare module "http" {
@@ -28,7 +28,7 @@ app.use(
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
-  })
+  }),
 );
 
 app.use(express.urlencoded({ extended: false }));
@@ -72,13 +72,13 @@ app.use((req, res, next) => {
 
 (async () => {
   // ---------------------------
-  //  FIX: SeedDatabase seguro
+  //  SeedDatabase seguro
   // ---------------------------
   if (process.env.NODE_ENV !== "production") {
-    // Em dev → seed normal
+    // Em desenvolvimento: seed normal, para manter ambiente sempre populado
     await seedDatabase();
   } else {
-    // Em produção → não derrubar servidor
+    // Em produção: não derrubar o servidor se o seed falhar
     seedDatabase().catch((err) => {
       console.error("SeedDatabase falhou em produção (IGNORADO):", err);
     });
@@ -87,13 +87,22 @@ app.use((req, res, next) => {
   // Registrar rotas normalmente
   await registerRoutes(httpServer, app);
 
-  // Middleware de erros
+  // Middleware de erros (não derruba o processo em produção)
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    console.error("[express][error]", {
+      status,
+      message,
+      stack: err.stack,
+    });
+
+    if (res.headersSent) {
+      return;
+    }
+
     res.status(status).json({ message });
-    throw err;
   });
 
   // Ambiente de produção → servir arquivos estáticos
@@ -117,6 +126,6 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
-    }
+    },
   );
 })();
